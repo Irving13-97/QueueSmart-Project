@@ -1,16 +1,20 @@
-# React + Vite
+# QueueSmart-Project
+Smart Queue Management Application
+Many organizations (student service centers, clinics, advising offices, help desks) struggle with long queues and poor visibility into wait times. Users often do not know how long they will wait, and staff have limited tools to manage demand efficiently.
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Your team will design QueueSmart, a web or mobile application that helps:
 
-Currently, two official plugins are available:
+Users
+Join a queue or book an appointment
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+View their position and estimated wait time
 
-## React Compiler
+Receive notifications when their turn is approaching
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+Administrators
+Create and manage services
 
-## Expanding the ESLint configuration
+Monitor queues and priorities
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+Improve overall service efficiency
+>>>>>>> ff898d7cb08f20fe02d5a717ad6e4e214abbeb51
