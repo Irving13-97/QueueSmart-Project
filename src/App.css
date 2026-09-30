@@ -182,3 +182,48 @@
     border-right-color: var(--border);
   }
 }
+
+.login-card{
+  background-color: gray;
+  padding: 30px;
+  width: 350px;
+  margin: auto;
+  border-radius: 10px;
+}
+
+.login-page{
+  background-color: white;
+  min-height: 100vh;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.login-card h2{
+  color: black;
+}
+.login-card p{
+  color: black;
+}
+.login-card label{
+  color: black;
+}
+.login-card div{
+  margin-bottom: 15px;
+}
+.login-card input{
+  width: 200px;
+  padding: 8px;
+  border: 1px solid #999999;
+  border-radius: 5px;
+}
+.input-group{
+  display: flex;
+  align-items: center;
+  margin-bottom: 15px;
+}
+.input-group label{
+  width: 70px;
+  text-align: left;
+  font-size: 14px;
+}
