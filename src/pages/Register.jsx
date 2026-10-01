@@ -36,7 +36,6 @@ export default function Register() {
     <div className="login-page">
       <form className="login-card" onSubmit={handleRegister}>
         <h2>Create Account</h2>
-        <p>Create a QueueSmart Account</p>
 
         {error && <p>{error}</p>}
 
