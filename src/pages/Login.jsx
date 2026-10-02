@@ -21,6 +21,11 @@ export default function Login() {
       return;
     }
 
+    if (!email.includes('@')){
+      setError('Please enter a valid email.');
+      return;
+    }
+
     // Mock role-based routing: only emails on the admin list go to admin
     if (adminEmails.includes(email.toLowerCase())) {
       navigate('/admin-dashboard');
@@ -40,7 +45,7 @@ export default function Login() {
         <div className="input-group">
           <label>Email: </label>
           <input
-            type="text"
+            type="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
           />

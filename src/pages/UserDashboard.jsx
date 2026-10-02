@@ -5,10 +5,19 @@ import '../App.css';
 
 export default function UserDashboard() {
   const [notifications] = useState(() => getNotifications());
+  const [activeQueue, setActiveQueue] = useState(() => {
+    const saved = localStorage.getItem('queuesmart_active_queue');
+    return saved ? JSON.parse(saved) : null;
+  });
+
   const navigate = useNavigate();
 
   const handleLogout = () => {
     navigate('/');
+  };
+  const handleLeaveQueue = () => {
+    localStorage.removeItem('queuesmart_active_queue');
+    setActiveQueue(null);
   };
 
   return (
@@ -32,6 +41,26 @@ export default function UserDashboard() {
             </div>
           ))
         )}
+      </div>
+
+      <div>
+        <h2>Active Queue</h2>
+        {activeQueue ? ( 
+          <div className="service-card"> 
+          <h3>{activeQueue.serviceName}</h3>
+          <p>Postion: #{activeQueue.position}</p>
+          <p>Estimate Wait: {activeQueue.waitTime}</p>
+          <Link to="/queue-status">View Queue Status</Link>
+          <button onClick={handleLeaveQueue}>Leave Queue</button>
+          </div>
+        ) : (
+          <div> 
+            <p>You are not currently in a queue</p>
+            <Link to="/join-queue">Join Queue</Link>
+          </div>
+        )}
+
+      
       </div>
 
       <div>

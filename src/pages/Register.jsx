@@ -18,6 +18,12 @@ export default function Register() {
       return;
     }
 
+    if (!email.includes('@')){
+      setError('Please enter a valid email.');
+      return;
+    }
+
+
     if (password.length < 6) {
       setError('Password must be at least 6 characters.');
       return;
@@ -51,7 +57,7 @@ export default function Register() {
         <div className="input-group">
           <label>Email: </label>
           <input
-            type="text"
+            type="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             placeholder="user@example.com"
