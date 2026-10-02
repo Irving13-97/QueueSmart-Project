@@ -280,3 +280,33 @@
   height: 80px;
   resize: vertical;
 }
+
+.queue-management{
+  text-align: center;
+  padding: 30px;
+}
+.queue-management h1{
+  margin-bottom: 10px;
+}
+.queue-management h2{
+  margin-top: 30px;
+}
+.queue-select{
+  margin: 24px 0 8px;
+}
+.queue-select label{
+  display: block;
+  margin-bottom: 8px;
+}
+.queue-select select{
+  padding: 8px;
+  border: 1px solid #777;
+  border-radius: 5px;
+}
+.queue-management .service-card{
+  margin-left: auto;
+  margin-right: auto;
+}
+.queue-management button{
+  margin: 6px;
+}

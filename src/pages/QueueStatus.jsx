@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
+import { addNotification } from '../notifications';
 import '../App.css';
 
 // Work out the status message from the queue position
@@ -15,12 +16,21 @@ export default function QueueStatus() {
     const saved = localStorage.getItem('queuesmart_active_queue');
     return saved ? JSON.parse(saved) : null;
   });
+  const [notice, setNotice] = useState('');
 
   // Demo only: moves the user one place forward so each status can be seen
   const handleAdvance = () => {
     const updated = { ...queue, position: queue.position - 1 };
     localStorage.setItem('queuesmart_active_queue', JSON.stringify(updated));
     setQueue(updated);
+
+    const before = getStatus(queue.position);
+    const after = getStatus(updated.position);
+    const message = before !== after
+      ? 'Your status changed to ' + after
+      : 'Your position moved to ' + updated.position;
+    addNotification(message);
+    setNotice(message);
   };
 
   return (
@@ -37,6 +47,7 @@ export default function QueueStatus() {
           </p>
           <p>Estimated Wait Time: {queue.position > 0 ? queue.waitTime : '0 mins'}</p>
           <p>Status: {getStatus(queue.position)}</p>
+          {notice && <p>{notice}</p>}
 
           {queue.position > 0 && (
             <button onClick={handleAdvance}>Advance Queue (demo)</button>

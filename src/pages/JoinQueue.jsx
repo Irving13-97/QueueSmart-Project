@@ -1,4 +1,5 @@
 import { useNavigate, Link } from 'react-router-dom';
+import { addNotification } from '../notifications';
 import '../App.css';
 
 // mock services available for selection
@@ -21,6 +22,7 @@ export default function JoinQueue() {
 
     // save to localStorage so UserDashboard can read it
     localStorage.setItem('queuesmart_active_queue', JSON.stringify(queueData));
+    addNotification('You joined the queue for ' + service.name);
 
     alert(`Successfully joined queue for ${service.name}!`);
     navigate('/user-dashboard');
