@@ -227,3 +227,56 @@
   text-align: left;
   font-size: 14px;
 }
+
+.service-card {
+  background-color: #999999;
+  padding: 20px;
+  margin: 15px 0;
+  border-radius: 10px;
+  width: 300px;
+  border: 1px solid #999999 ;
+  color: black;
+}
+
+.services-container{
+  display: flex;
+  justify-content: center;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+
+.service-management{
+  text-align: center;
+  padding: 30px;
+}
+.service-management h1{
+  margin-bottom: 10px;
+}
+.service-management h2{
+  margin-top: 30px;
+}
+.service-management form{
+  background-color: #999999;
+  width: 400px;
+  margin: 20px auto;
+  padding: 25px;
+  border-radius: 10px;
+}
+.service-management form div{
+  margin-bottom: 15px;
+}
+.service-management label{
+  display: block;
+  margin-bottom: 5px;
+  color: black;
+}
+.service-management input, .service-management textarea, .service-management select{
+  width: 90%;
+  padding: 8px;
+  border: 1px solid #777;
+  border-radius: 5px;
+}
+.service-management textarea{
+  height: 80px;
+  resize: vertical;
+}

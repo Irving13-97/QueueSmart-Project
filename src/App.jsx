@@ -6,7 +6,10 @@ import JoinQueue from './pages/JoinQueue'
 import QueueStatus from './pages/QueueStatus'
 import History from './pages/History'   
 import AdminDashboard from './pages/AdminDashboard'
+import QueueManagement from './pages/QueueManagement'
+import ServiceManagement from './pages/ServiceManagement'
 import './App.css'
+
 
 function App() {
   return (
@@ -17,8 +20,10 @@ function App() {
         <Route path="/user-dashboard" element={<UserDashboard />} />
         <Route path="/admin-dashboard" element={<AdminDashboard />} />
         <Route path="/join-queue" element={<JoinQueue />} />
-        <Route path="queue-status" element={<QueueStatus />} />
-        <Route path="history" element={<History />} />
+        <Route path="/queue-status" element={<QueueStatus />} />
+        <Route path="/history" element={<History />} />
+        <Route path="/service-management" element={<ServiceManagement />}/>
+        <Route path="/queue-management" element={<QueueManagement />} />
       </Routes>
     </Router>
   )
