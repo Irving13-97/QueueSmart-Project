@@ -1,143 +1,71 @@
-import { useState } from "react";
-import { Link } from "react-router-dom";
-import "../App.css";
+import { useState } from 'react';
+import { useNavigate, Link } from 'react-router-dom';
+import '../App.css';
 
-export default function ServiceManagement() {
-  const [serviceName, setServiceName] = useState("");
-  const [description, setDescription] = useState("");
-  const [duration, setDuration] = useState("");
-  const [priority, setPriority] = useState("low");
-  const [editingId, setEditingId] = useState(null);
-  const [message, setMessage] = useState("");
+// mock admin account. As of Assignment 2, this is the only email that 
+// will allow one to login to the admin dashboard
+const adminEmails = ['admin@queuesmart.com'];
 
-  const [services, setServices] = useState([
-    {
-      id: 1,
-      name: "Express Oil Change",
-      description: "Quick oil change service",
-      duration: 15,
-      priority: "medium",
-    },
-    {
-      id: 2,
-      name: "Full Synthetic Service",
-      description: "Full synthetic oil service",
-      duration: 30,
-      priority: "high",
-    },
-  ]);
+export default function Login() {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+  const navigate = useNavigate();
 
-  const handleSubmit = (e) => {
+  const handleLogin = (e) => {
     e.preventDefault();
 
-    const newService = {
-      id: editingId || Date.now(),
-      name: serviceName,
-      description: description,
-      duration: Number(duration),
-      priority: priority,
-    };
-
-    if (editingId) {
-      setServices(
-        services.map((service) =>
-          service.id === editingId ? newService : service
-        )
-      );
-      setMessage("Service updated successfully.");
-    } else {
-      setServices([...services, newService]);
-      setMessage("Service created successfully.");
+    // Client-side validation: check for empty fields
+    if (!email || !password) {
+      setError('Please fill in all fields.');
+      return;
     }
 
-    setServiceName("");
-    setDescription("");
-    setDuration("");
-    setPriority("low");
-    setEditingId(null);
-  };
+    if (!email.includes('@')){
+      setError('Please enter a valid email.');
+      return;
+    }
 
-  const handleEdit = (service) => {
-    setServiceName(service.name);
-    setDescription(service.description);
-    setDuration(service.duration);
-    setPriority(service.priority);
-    setEditingId(service.id);
-    setMessage("");
+    // Mock role-based routing: only emails on the admin list go to admin
+    if (adminEmails.includes(email.toLowerCase())) {
+      navigate('/admin-dashboard');
+    } else {
+      navigate('/user-dashboard');
+    }
   };
 
   return (
-    <div className="service-management">
-      <h1>Service Management</h1>
-      <p>Create and manage services.</p>
+    <div className="login-page">
+      <form className="login-card" onSubmit={handleLogin}>
+        <h2>Login Page</h2>
+        <p>Login to your Account</p>
 
-      <Link to="/admin-dashboard">Back to Admin Dashboard</Link>
+        {error && <p>{error}</p>}
 
-      <h2>{editingId ? "Edit Service" : "Create Service"}</h2>
-
-      {message && <p>{message}</p>}
-
-      <form onSubmit={handleSubmit}>
-        <div>
-          <label>Service Name:</label>
+        <div className="input-group">
+          <label>Email: </label>
           <input
-            type="text"
-            value={serviceName}
-            maxLength={100}
-            required
-            onChange={(e) => setServiceName(e.target.value)}
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
           />
         </div>
 
-        <div>
-          <label>Description:</label>
-          <textarea
-            value={description}
-            required
-            onChange={(e) => setDescription(e.target.value)}
-          />
-        </div>
-
-        <div>
-          <label>Expected Duration (minutes):</label>
+        <div className="input-group">
+          <label>Password: </label>
           <input
-            type="number"
-            min="1"
-            value={duration}
-            required
-            onChange={(e) => setDuration(e.target.value)}
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
           />
         </div>
 
-        <div>
-          <label>Priority:</label>
-          <select
-            value={priority}
-            onChange={(e) => setPriority(e.target.value)}
-          >
-            <option value="low">Low</option>
-            <option value="medium">Medium</option>
-            <option value="high">High</option>
-          </select>
-        </div>
+        <button type="submit">Log In</button>
 
-        <button type="submit">
-          {editingId ? "Update Service" : "Create Service"}
-        </button>
+        <p>
+          Don't have an account? <Link to="/register">Register</Link>
+        </p>
       </form>
-
-      <h2>Existing Services</h2>
-
-      {services.map((service) => (
-        <div className="service-card" key={service.id}>
-          <h3>{service.name}</h3>
-          <p>{service.description}</p>
-          <p>Expected Duration: {service.duration} minutes</p>
-          <p>Priority: {service.priority}</p>
-
-          <button onClick={() => handleEdit(service)}>Edit</button>
-        </div>
-      ))}
     </div>
   );
 }
