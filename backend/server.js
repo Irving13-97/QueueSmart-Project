@@ -372,9 +372,36 @@ app.delete('/api/queues/:serviceId/leave/:customerId', (req, res) => {
   });
 });
 
+
+
 app.get('/api/history', (req, res) => {
   return res.json(queueHistory);
 });
+
+app.get('/api/history/:serviceId', (req, res) => {
+  const serviceId = Number(req.params.serviceId);
+
+  if (!Number.isInteger(serviceId) || serviceId <= 0) {
+    return res.status(400).json({
+      error: 'Invalid service ID'
+    });
+  }
+
+  const service = services.find(item => item.id === serviceId);
+
+  if (!service) {
+    return res.status(404).json({
+      error: 'Service not found'
+    });
+  }
+
+  const serviceHistory = queueHistory.filter(
+    record => record.serviceId === serviceId
+  );
+
+  return res.json(serviceHistory);
+});
+
 
 
 
