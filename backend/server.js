@@ -48,6 +48,8 @@ let queues = [
 
 let nextCustomerId = 1;
 
+let queueHistory = [];
+
 // Test endpoint
 app.get('/', (req, res) => {
   res.json({ message: 'QueueSmart backend is running!' });
@@ -104,6 +106,11 @@ app.post('/api/services',(req,res) => {
     };
 
     services.push(newService);
+
+    queues.push({
+      serviceId: newService.id,
+      customers: []
+    });
 
     return res.status(201).json({
         message: 'Service created successfully',
@@ -166,6 +173,98 @@ app.put('/api/services/:id', (req, res) => {
         message: 'Service updated successfully',
         service
     });
+});
+
+app.delete('/api/services/:id', (req, res) =>{
+  const serviceId = Number(req.params.id);
+
+  if (!Number.isInteger(serviceId) || serviceId <= 0){
+    return res.status(400).json({
+      error: 'Invalid service ID'
+    });
+  }
+
+  const serviceIndex = services.findIndex(
+    service => service.id === serviceId
+  );
+
+  if(serviceIndex === -1){
+    return res.status(404).json({
+      error: 'Service not found'
+    });
+  }
+
+  const queue = queues.find(item => item.serviceId === serviceId);
+
+  if(queue && queue.customers.length > 0){
+    return res.status(409).json({
+      error: 'Cannot delete a service while customers are waiting'
+    });
+  }
+
+  const deletedService = services[serviceIndex];
+
+  services.splice(serviceIndex, 1);
+  queues = queues.filter(item => item.serviceId !== serviceId);
+
+  return res.json({
+    message: 'Service deleted successfully',
+    service: deletedService
+  });
+
+});
+
+app.post("/api/queues/:serviceId/serve-next", (req, res) =>{
+  const serviceId = Number(req.params.serviceId);
+
+  if(!Number.isInteger(serviceId) || serviceId <= 0){
+    return res.status(400).json({
+      error: "Invalid service ID",
+    });
+  }
+
+  const service = services.find((s) => s.id === serviceId);
+
+  if(!service){
+    return res.status(404).json({
+      error: "Service not found",
+    });
+  }
+
+  const queue = queues.find((q) => q.serviceId === serviceId);
+
+  if(!queue){
+    return res.status(404).json({
+      error: "Queue not found",
+    });
+  }
+
+  if(queue.customers.length === 0){
+    return res.status(400).json({
+      error: "No customers are waiting in this queue",
+    });
+  }
+
+  const servedCustomer = queue.customers.shift();
+
+  queueHistory.push({
+    customerId: servedCustomer.id,
+    customerName: servedCustomer.customerName,
+    serviceId: serviceId,
+    serviceName: service.name,
+    status: 'served',
+    completedAt: new Date().toISOString()
+  });
+
+  queue.customers.forEach((customer, index) =>{
+    customer.position = index + 1;
+  });
+
+  return res.status(200).json({
+    message: `${servedCustomer.customerName} has been served`,
+    servedCustomer,
+    remainingCustomers: queue.customers.length,
+  });
 });
 
 
@@ -257,12 +356,26 @@ app.delete('/api/queues/:serviceId/leave/:customerId', (req, res) => {
 
   const removedCustomer = queue.customers.splice(customerIndex, 1)[0];
 
+  queueHistory.push({
+    customerId: removedCustomer.id,
+    customerName: removedCustomer.customerName,
+    serviceId: serviceId,
+    serviceName: services.find(service => service.id === serviceId).name,
+    status: 'left',
+    completedAt: new Date().toISOString()
+  });
+
   return res.json({
     message: `${removedCustomer.customerName} has left the queue.`,
     customerId: removedCustomer.id,
     remainingCustomers: queue.customers.length
   });
 });
+
+app.get('/api/history', (req, res) => {
+  return res.json(queueHistory);
+});
+
 
 
 app.listen(PORT, () => {
