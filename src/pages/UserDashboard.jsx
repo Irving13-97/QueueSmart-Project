@@ -1,10 +1,12 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { getNotifications } from '../notifications';
+import { clearCurrentUser } from '../api';
 import '../App.css';
 
 export default function UserDashboard() {
-  const [notifications] = useState(() => getNotifications());
+  const [notifications, setNotifications] = useState([]);
+  const [notificationError, setNotificationError] = useState('');
   const [activeQueue, setActiveQueue] = useState(() => {
     const saved = localStorage.getItem('queuesmart_active_queue');
     return saved ? JSON.parse(saved) : null;
@@ -12,7 +14,14 @@ export default function UserDashboard() {
 
   const navigate = useNavigate();
 
+  useEffect(() => {
+    getNotifications()
+      .then(setNotifications)
+      .catch((err) => setNotificationError(err.message));
+  }, []);
+
   const handleLogout = () => {
+    clearCurrentUser();
     navigate('/');
   };
   const handleLeaveQueue = () => {
@@ -32,7 +41,9 @@ export default function UserDashboard() {
   
       <div>
         <h2>Notifications</h2>
-        {notifications.length === 0 ? (
+        {notificationError ? (
+          <p>{notificationError}</p>
+        ) : notifications.length === 0 ? (
           <p>You have no notifications</p>
         ) : (
           notifications.slice(0, 3).map((note) => (

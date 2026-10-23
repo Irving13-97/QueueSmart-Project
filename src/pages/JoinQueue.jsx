@@ -22,7 +22,7 @@ export default function JoinQueue() {
 
     // save to localStorage so UserDashboard can read it
     localStorage.setItem('queuesmart_active_queue', JSON.stringify(queueData));
-    addNotification('You joined the queue for ' + service.name);
+    addNotification('You joined the queue for ' + service.name).catch(() => {});
 
     alert(`Successfully joined queue for ${service.name}!`);
     navigate('/user-dashboard');

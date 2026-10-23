@@ -1,9 +1,14 @@
 import express from 'express';
+import { fileURLToPath } from 'url';
+import authRouter, { findUserById } from './auth.js';
+import notificationsRouter, { notifyJoined, notifyCloseToServed } from './notifications.js';
 
 const app = express();
 const PORT = 3000;
 
 app.use(express.json());
+app.use('/api/auth', authRouter);
+app.use('/api/notifications', notificationsRouter);
 
 // Temporary service data stored in memory
 let services = [
@@ -260,6 +265,8 @@ app.post("/api/queues/:serviceId/serve-next", (req, res) =>{
     customer.position = index + 1;
   });
 
+  notifyCloseToServed(queue, service);
+
   return res.status(200).json({
     message: `${servedCustomer.customerName} has been served`,
     servedCustomer,
@@ -270,7 +277,7 @@ app.post("/api/queues/:serviceId/serve-next", (req, res) =>{
 
 app.post('/api/queues/:serviceId/join', (req, res) => {
   const serviceId = Number(req.params.serviceId);
-  const { customerName } = req.body;
+  const { customerName, userId } = req.body ?? {};
 
   const service = services.find(item => item.id === serviceId);
   const queue = queues.find(item => item.serviceId === serviceId);
@@ -291,6 +298,18 @@ app.post('/api/queues/:serviceId/join', (req, res) => {
     });
   }
 
+  if (userId !== undefined && (!Number.isInteger(userId) || userId <= 0)) {
+    return res.status(400).json({
+      error: 'User ID must be a positive whole number.'
+    });
+  }
+
+  if (userId !== undefined && !findUserById(userId)) {
+    return res.status(404).json({
+      error: 'User not found.'
+    });
+  }
+
   const customer = {
     id: nextCustomerId++,
     customerName: customerName.trim(),
@@ -298,7 +317,14 @@ app.post('/api/queues/:serviceId/join', (req, res) => {
     position: queue.customers.length + 1
   };
 
+  if (userId !== undefined) {
+    customer.userId = userId;
+  }
+
   queue.customers.push(customer);
+
+  notifyJoined(customer, service);
+  notifyCloseToServed(queue, service);
 
   return res.status(201).json({
     message: 'Successfully joined the queue.',
@@ -365,6 +391,8 @@ app.delete('/api/queues/:serviceId/leave/:customerId', (req, res) => {
     completedAt: new Date().toISOString()
   });
 
+  notifyCloseToServed(queue, services.find(service => service.id === serviceId));
+
   return res.json({
     message: `${removedCustomer.customerName} has left the queue.`,
     customerId: removedCustomer.id,
@@ -405,6 +433,10 @@ app.get('/api/history/:serviceId', (req, res) => {
 
 
 
-app.listen(PORT, () => {
-  console.log(`QueueSmart backend running at http://localhost:${PORT}`);
-});
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  app.listen(PORT, () => {
+    console.log(`QueueSmart backend running at http://localhost:${PORT}`);
+  });
+}
+
+export default app;

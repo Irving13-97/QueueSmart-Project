@@ -1,18 +1,16 @@
 import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
+import { apiRequest, setCurrentUser } from '../api';
 import '../App.css';
-
-// mock admin account. As of Assignment 2, this is the only email that 
-// will allow one to login to the admin dashboard
-const adminEmails = ['admin@queuesmart.com'];
 
 export default function Login() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
 
-  const handleLogin = (e) => {
+  const handleLogin = async (e) => {
     e.preventDefault();
 
     // Client-side validation: check for empty fields
@@ -26,11 +24,20 @@ export default function Login() {
       return;
     }
 
-    // Mock role-based routing: only emails on the admin list go to admin
-    if (adminEmails.includes(email.toLowerCase())) {
-      navigate('/admin-dashboard');
-    } else {
-      navigate('/user-dashboard');
+    setError('');
+    setLoading(true);
+
+    try {
+      const { user } = await apiRequest('/api/auth/login', {
+        method: 'POST',
+        body: JSON.stringify({ email, password }),
+      });
+      setCurrentUser(user);
+      navigate(user.role === 'admin' ? '/admin-dashboard' : '/user-dashboard');
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -60,7 +67,9 @@ export default function Login() {
           />
         </div>
 
-        <button type="submit">Log In</button>
+        <button type="submit" disabled={loading}>
+          {loading ? 'Logging In...' : 'Log In'}
+        </button>
 
         <p>
           Don't have an account? <Link to="/register">Register</Link>

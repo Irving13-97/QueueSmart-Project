@@ -29,7 +29,7 @@ export default function QueueStatus() {
     const message = before !== after
       ? 'Your status changed to ' + after
       : 'Your position moved to ' + updated.position;
-    addNotification(message);
+    addNotification(message).catch(() => {});
     setNotice(message);
   };
 

@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
+import { apiRequest, setCurrentUser } from '../api';
 import '../App.css';
 
 export default function Register() {
@@ -7,14 +8,20 @@ export default function Register() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
 
-  const handleRegister = (e) => {
+  const handleRegister = async (e) => {
     e.preventDefault();
 
     // Client-side validation
     if (!name || !email || !password) {
       setError('All fields are required.');
+      return;
+    }
+
+    if (name.trim().length > 100) {
+      setError('Name must be 100 characters or fewer.');
       return;
     }
 
@@ -29,13 +36,22 @@ export default function Register() {
       return;
     }
 
-    // Mock account: every new account is a regular user.
-    // Admin access would be granted separately (not at sign-up).
-    const newAccount = { name, email, role: 'user' };
-    console.log('Mock account created:', newAccount);
+    setError('');
+    setLoading(true);
 
-    alert('Account created successfully!');
-    navigate('/user-dashboard');
+    try {
+      const { user } = await apiRequest('/api/auth/register', {
+        method: 'POST',
+        body: JSON.stringify({ name, email, password }),
+      });
+      setCurrentUser(user);
+      alert('Account created successfully!');
+      navigate('/user-dashboard');
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -74,7 +90,9 @@ export default function Register() {
           />
         </div>
 
-        <button type="submit">Create Account</button>
+        <button type="submit" disabled={loading}>
+          {loading ? 'Creating Account...' : 'Create Account'}
+        </button>
 
         <p>
           Already have an account? <Link to="/">Log in</Link>

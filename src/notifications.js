@@ -1,12 +1,15 @@
-const storageKey = 'queuesmart_notifications';
+import { apiRequest, getCurrentUser } from './api';
 
-export function getNotifications() {
-  const saved = localStorage.getItem(storageKey);
-  return saved ? JSON.parse(saved) : [];
+export async function getNotifications() {
+  const user = getCurrentUser();
+  const query = user ? `?userId=${user.id}` : '';
+  return apiRequest(`/api/notifications${query}`);
 }
 
-export function addNotification(message) {
-  const next = [{ id: Date.now(), message }, ...getNotifications()].slice(0, 10);
-  localStorage.setItem(storageKey, JSON.stringify(next));
-  return next;
+export async function addNotification(message) {
+  const user = getCurrentUser();
+  return apiRequest('/api/notifications', {
+    method: 'POST',
+    body: JSON.stringify({ userId: user?.id, message }),
+  });
 }

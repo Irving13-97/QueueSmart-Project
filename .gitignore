@@ -25,6 +25,7 @@ dist-ssr
 
 # Backend dependencies
 backend/node_modules/
+backend/coverage/
 
 # Environment variables and secrets
 .env
