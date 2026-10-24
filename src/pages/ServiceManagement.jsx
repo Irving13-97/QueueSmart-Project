@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { apiRequest } from "../api";
 import { Link } from "react-router-dom";
 import "../App.css";
 
@@ -10,52 +11,81 @@ export default function ServiceManagement() {
   const [editingId, setEditingId] = useState(null);
   const [message, setMessage] = useState("");
 
-  const [services, setServices] = useState([
-    {
-      id: 1,
-      name: "Express Oil Change",
-      description: "Quick oil change service",
-      duration: 15,
-      priority: "medium",
-    },
-    {
-      id: 2,
-      name: "Full Synthetic Service",
-      description: "Full synthetic oil service",
-      duration: 30,
-      priority: "high",
-    },
-  ]);
+  const [services, setServices] = useState([]);
+const [loading, setLoading] = useState(true);
+const [error, setError] = useState("");
 
-  const handleSubmit = (e) => {
-    e.preventDefault();
+useEffect(() => {
+  let active = true;
 
-    const newService = {
-      id: editingId || Date.now(),
-      name: serviceName,
-      description: description,
-      duration: Number(duration),
-      priority: priority,
-    };
+  async function loadServices() {
+    try {
+      const data = await apiRequest("/api/services");
+      if (active) setServices(data);
+    } catch (err) {
+      if (active) setError(err.message);
+    } finally {
+      if (active) setLoading(false);
+    }
+  }
 
-    if (editingId) {
-      setServices(
-        services.map((service) =>
-          service.id === editingId ? newService : service
+  loadServices();
+
+  return () => {
+    active = false;
+  };
+}, []);
+
+const handleSubmit = async (e) => {
+  e.preventDefault();
+  setMessage("");
+  setError("");
+
+  const serviceData = {
+    name: serviceName.trim(),
+    description: description.trim(),
+    duration: Number(duration),
+    priority: priority,
+  };
+
+  try {
+    const isEditing = editingId !== null;
+
+    const result = await apiRequest(
+      isEditing
+        ? `/api/services/${editingId}`
+        : "/api/services",
+      {
+        method: isEditing ? "PUT" : "POST",
+        body: JSON.stringify(serviceData),
+      }
+    );
+
+    if (isEditing) {
+      setServices((previous) =>
+        previous.map((service) =>
+          service.id === editingId ? result.service : service
         )
       );
-      setMessage("Service updated successfully.");
     } else {
-      setServices([...services, newService]);
-      setMessage("Service created successfully.");
+      setServices((previous) => [
+        ...previous,
+        result.service,
+      ]);
     }
+
+    setMessage(result.message);
 
     setServiceName("");
     setDescription("");
     setDuration("");
     setPriority("low");
     setEditingId(null);
-  };
+
+  } catch (err) {
+    setError(err.message);
+  }
+};
 
   const handleEdit = (service) => {
     setServiceName(service.name);
@@ -76,6 +106,12 @@ export default function ServiceManagement() {
       <h2>{editingId ? "Edit Service" : "Create Service"}</h2>
 
       {message && <p>{message}</p>}
+
+{error && (
+  <p style={{ color: "red" }} role="alert">
+    {error}
+  </p>
+)}
 
       <form onSubmit={handleSubmit}>
         <div>
@@ -127,6 +163,7 @@ export default function ServiceManagement() {
       </form>
 
       <h2>Existing Services</h2>
+      {loading && <p>Loading services...</p>}
 
       {services.map((service) => (
         <div className="service-card" key={service.id}>
