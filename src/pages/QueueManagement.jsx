@@ -1,78 +1,135 @@
-import { useState } from "react";
+
+import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
-import '../App.css';
+import { apiRequest } from "../api";
+import "../App.css";
 
-const services = [
-  { id: "oil", name: "Express Oil change" },
-  { id: "tire", name: "Tire Rotation & Inspection" },
-  { id: "synthetic", name: "Full Synthetic Service" },
-];
-
-const initialQueues = {
-  oil: [
-    { id: 1, name: "Jordan Lee" },
-    { id: 2, name: "Alex Rivera" },
-    { id: 3, name: "Sam Patel" },
-    { id: 4, name: "Taylor Brooks" },
-    { id: 5, name: "Casey Nguyen" },
-  ],
-  tire: [
-    { id: 6, name: "Morgan Diaz" },
-    { id: 7, name: "Riley Chen" },
-    { id: 8, name: "Jamie Ortiz" },
-  ],
-  synthetic: [
-    { id: 9, name: "Avery Shah" },
-    { id: 10, name: "Quinn Brooks" },
-  ],
-};
-
-export default function QueueManagement(){
-  const [queues, setQueues] = useState(initialQueues);
-  const [selected, setSelected] = useState("oil");
+export default function QueueManagement() {
+  const [services, setServices] = useState([]);
+  const [selected, setSelected] = useState("");
+  const [people, setPeople] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [queueLoading, setQueueLoading] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
 
-  const people = queues[selected];
-  const serviceName = services.find((service) => service.id === selected).name;
+  // Load available services from the backend
+  useEffect(() => {
+    let active = true;
 
-  const updateSelected = (nextPeople) => {
-    setQueues({ ...queues, [selected]: nextPeople });
-  };
+    async function loadServices() {
+      try {
+        const data = await apiRequest("/api/services");
 
-  const handleServeNext = () => {
-    if (people.length === 0) {
-      return;
+        if (active) {
+          setServices(data);
+          if (data.length > 0) {
+            setSelected(String(data[0].id));
+          }
+        }
+      } catch (err) {
+        if (active) setError(err.message);
+      } finally {
+        if (active) setLoading(false);
+      }
     }
-    const served = people[0];
-    updateSelected(people.slice(1));
-    setNotice(served.name + " was served");
-  };
 
-  const handleRemove = (id) => {
-    const person = people.find((entry) => entry.id === id);
-    updateSelected(people.filter((entry) => entry.id !== id));
-    setNotice(person.name + " was removed");
-  };
+    loadServices();
 
-  const handleMove = (index, direction) => {
-    const target = index + direction;
-    if (target < 0 || target >= people.length) {
-      return;
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  // Load customers whenever a service is selected
+  useEffect(() => {
+    if (!selected) return;
+
+    let active = true;
+    setQueueLoading(true);
+    setError("");
+
+    async function loadQueue() {
+      try {
+        const data = await apiRequest(
+          `/api/queues/${selected}`
+        );
+        if (active) setPeople(data.customers);
+      } catch (err) {
+        if (active) setError(err.message);
+      } finally {
+        if (active) setQueueLoading(false);
+      }
     }
-    const next = [...people];
-    const current = next[index];
-    next[index] = next[target];
-    next[target] = current;
-    updateSelected(next);
-    setNotice("");
+
+    loadQueue();
+
+    return () => {
+      active = false;
+    };
+  }, [selected]);
+
+  // Refresh the current queue after changes
+  const refreshQueue = async () => {
+    const data = await apiRequest(`/api/queues/${selected}`);
+    setPeople(data.customers);
   };
 
-  return(
+  // Serve the next customer
+  const handleServeNext = async () => {
+    if (people.length === 0) return;
+
+    setBusy(true);
+    setError("");
+
+    try {
+      const result = await apiRequest(
+        `/api/queues/${selected}/serve-next`,
+        { method: "POST" }
+      );
+
+      setNotice(result.message);
+      await refreshQueue();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // Remove a customer from the queue
+  const handleRemove = async (customerId) => {
+    setBusy(true);
+    setError("");
+
+    try {
+      const result = await apiRequest(
+        `/api/queues/${selected}/leave/${customerId}`,
+        { method: "DELETE" }
+      );
+
+      setNotice(result.message);
+      await refreshQueue();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const selectedService = services.find(
+    (service) => String(service.id) === selected
+  );
+
+  return (
     <div className="queue-management">
       <h1>Queue Management</h1>
-      <p>Manage customers waiting in the queue</p>
+      <p>Manage customers waiting in the queue.</p>
 
-      <Link to="/admin-dashboard">Back to Admin Dashboard</Link>
+      <Link to="/admin-dashboard">
+        Back to Admin Dashboard
+      </Link>
 
       <div className="queue-select">
         <label>Service</label>
@@ -82,6 +139,7 @@ export default function QueueManagement(){
             setSelected(e.target.value);
             setNotice("");
           }}
+          disabled={loading || busy}
         >
           {services.map((service) => (
             <option key={service.id} value={service.id}>
@@ -91,39 +149,60 @@ export default function QueueManagement(){
         </select>
       </div>
 
-      <h2>{serviceName}</h2>
-      {notice && <p>{notice}</p>}
+      <h2>{selectedService?.name || "Select a service"}</h2>
 
-      <button onClick={handleServeNext} disabled={people.length === 0}>
+      {notice && <p>{notice}</p>}
+      {error && (
+        <p role="alert" style={{ color: "red" }}>
+          {error}
+        </p>
+      )}
+
+      <button
+        onClick={handleServeNext}
+        disabled={busy || queueLoading || people.length === 0}
+      >
         Serve Next
       </button>
 
-      {people.length === 0 ? (
-        <p>No one is waiting</p>
+      <button
+        onClick={async () => {
+          setError("");
+          try {
+            await refreshQueue();
+          } catch (err) {
+            setError(err.message);
+          }
+        }}
+        disabled={!selected || busy}
+      >
+        Refresh Queue
+      </button>
+
+      {loading || queueLoading ? (
+        <p>Loading queue...</p>
+      ) : !selected ? (
+        <p>No services available.</p>
+      ) : people.length === 0 ? (
+        <p>No one is waiting.</p>
       ) : (
         <div>
-          <p>
-            {people.length === 1
-              ? "1 person waiting"
-              : people.length + " people waiting"}
-          </p>
-          {people.map((person, index) => (
+          <p>{people.length} people waiting</p>
+
+          {people.map((person) => (
             <div key={person.id} className="service-card">
-              <p>Position {index + 1}</p>
-              <h3>{person.name}</h3>
+              <p>Position: {person.position}</p>
+              <h3>{person.customerName}</h3>
+              <p>
+                Estimated Wait: {person.estimatedWait} minutes
+              </p>
+
               <button
-                onClick={() => handleMove(index, -1)}
-                disabled={index === 0}
+                onClick={() => handleRemove(person.id)}
+                disabled={busy}
               >
-                Move Up
+                Remove
               </button>
-              <button
-                onClick={() => handleMove(index, 1)}
-                disabled={index === people.length - 1}
-              >
-                Move Down
-              </button>
-              <button onClick={() => handleRemove(person.id)}>Remove</button>
             </div>
           ))}
         </div>
