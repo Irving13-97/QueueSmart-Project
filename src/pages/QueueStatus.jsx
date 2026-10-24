@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { apiRequest } from '../api';
 import { Link } from 'react-router-dom';
-import { addNotification } from '../notifications';
+
 import '../App.css';
 
 // Work out the status message from the queue position
@@ -17,26 +18,92 @@ export default function QueueStatus() {
     return saved ? JSON.parse(saved) : null;
   });
   const [notice, setNotice] = useState('');
+  const [error, setError] = useState('');
+
+useEffect(() => {
+  if (!queue?.serviceId || !queue?.customerId) return;
+
+  let active = true;
+
+  async function loadQueueStatus() {
+    try {
+      const data = await apiRequest(
+        `/api/queues/${queue.serviceId}`
+      );
+
+      const customer = data.customers.find(
+        (person) => person.id === queue.customerId
+      );
+
+      if (!active) return;
+
+      if (customer) {
+        const updatedQueue = {
+          ...queue,
+          serviceName: data.serviceName,
+          position: customer.position,
+          waitTime: `${customer.estimatedWait} mins`,
+        };
+
+        setQueue(updatedQueue);
+
+        localStorage.setItem(
+          'queuesmart_active_queue',
+          JSON.stringify(updatedQueue)
+        );
+      } else {
+        localStorage.removeItem('queuesmart_active_queue');
+        setQueue(null);
+        setNotice('You are no longer in this queue.');
+      }
+    } catch (err) {
+      if (active) setError(err.message);
+    }
+  }
+
+  loadQueueStatus();
+
+  return () => {
+    active = false;
+  };
+}, [queue?.serviceId, queue?.customerId]);
 
   // Demo only: moves the user one place forward so each status can be seen
-  const handleAdvance = () => {
-    const updated = { ...queue, position: queue.position - 1 };
-    localStorage.setItem('queuesmart_active_queue', JSON.stringify(updated));
-    setQueue(updated);
-
-    const before = getStatus(queue.position);
-    const after = getStatus(updated.position);
-    const message = before !== after
-      ? 'Your status changed to ' + after
-      : 'Your position moved to ' + updated.position;
-    addNotification(message).catch(() => {});
-    setNotice(message);
+  const handleLeave = async () => {
+    if (!queue) return;
+  
+    setError('');
+    setNotice('');
+  
+    try {
+      const result = await apiRequest(
+        `/api/queues/${queue.serviceId}/leave/${queue.customerId}`,
+        {
+          method: 'DELETE',
+        }
+      );
+  
+      localStorage.removeItem('queuesmart_active_queue');
+  
+      setQueue(null);
+      setNotice(result.message);
+  
+    } catch (err) {
+      setError(err.message);
+    }
   };
 
   return (
     <div>
       <h1>Queue Status</h1>
       <Link to="/user-dashboard">Back to Dashboard</Link>
+      {notice && <p>{notice}</p>}
+
+{error && (
+  <p style={{ color: "red" }} role="alert">
+    {error}
+  </p>
+)}
 
       {queue ? (
         <div>
@@ -50,8 +117,13 @@ export default function QueueStatus() {
           {notice && <p>{notice}</p>}
 
           {queue.position > 0 && (
-            <button onClick={handleAdvance}>Advance Queue (demo)</button>
-          )}
+  <>
+    <button onClick={handleLeave}>Leave Queue</button>
+    <button onClick={() => window.location.reload()}>
+      Refresh Status
+    </button>
+  </>
+)}
         </div>
       ) : (
         <div>
