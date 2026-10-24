@@ -1,31 +1,92 @@
+import { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { addNotification } from '../notifications';
+import { apiRequest, getCurrentUser } from '../api';
 import '../App.css';
 
-// mock services available for selection
-const mockServices = [
-  { id: 1, name: 'Express Oil Change', estimatedTime: '15 mins' },
-  { id: 2, name: 'Full Synthetic Service', estimatedTime: '30 mins' },
-  { id: 3, name: 'Tire Rotation & Inspection', estimatedTime: '20 mins' }
-];
+
 
 export default function JoinQueue() {
   const navigate = useNavigate();
+  const [services, setServices] = useState([]);
+const [loading, setLoading] = useState(true);
+const [error, setError] = useState("");
+
+useEffect(() => {
+  let active = true;
+
+  async function loadServices() {
+    try {
+      const data = await apiRequest("/api/services");
+
+      if (active) {
+        setServices(data);
+      }
+    } catch (err) {
+      if (active) {
+        setError(err.message);
+      }
+    } finally {
+      if (active) {
+        setLoading(false);
+      }
+    }
+  }
+
+  loadServices();
+
+  return () => {
+    active = false;
+  };
+}, []);
 
   // select a service and join queue
-  const handleJoin = (service) => {
-    const queueData = {
-      serviceName: service.name,
-      position: Math.floor(Math.random() * 4) + 2, // Random position between 2 and 5
-      waitTime: service.estimatedTime
-    };
-
-    // save to localStorage so UserDashboard can read it
-    localStorage.setItem('queuesmart_active_queue', JSON.stringify(queueData));
-    addNotification('You joined the queue for ' + service.name).catch(() => {});
-
-    alert(`Successfully joined queue for ${service.name}!`);
-    navigate('/user-dashboard');
+  const handleJoin = async (service) => {
+    setError("");
+  
+    const currentUser = getCurrentUser();
+  
+    if (!currentUser) {
+      setError("Please log in before joining a queue.");
+      return;
+    }
+  
+    try {
+      const result = await apiRequest(
+        `/api/queues/${service.id}/join`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            customerName:
+              currentUser.name ||
+              currentUser.fullName ||
+              currentUser.email,
+            ...(Number.isInteger(currentUser.id)
+              ? { userId: currentUser.id }
+              : {}),
+          }),
+        }
+      );
+  
+      const queueData = {
+        serviceId: service.id,
+        customerId: result.customer.id,
+        serviceName: service.name,
+        position: result.customer.position,
+        waitTime: `${result.customer.position * service.duration} mins`,
+      };
+  
+      localStorage.setItem(
+        "queuesmart_active_queue",
+        JSON.stringify(queueData)
+      );
+  
+      alert(`Successfully joined queue for ${service.name}!`);
+  
+      navigate("/user-dashboard");
+  
+    } catch (err) {
+      setError(err.message);
+    }
   };
 
   return (
@@ -42,10 +103,10 @@ export default function JoinQueue() {
         <h2>Available Services &amp; Estimated Wait Times</h2>
         <p>Click "Join Queue" on your preferred service:</p>
 
-        {mockServices.map((service) => (
+        {services.map((service) => (
           <div key={service.id}>
             <h3>{service.name}</h3>
-            <p>Est. Wait Time: {service.estimatedTime}</p>
+            <p>Expected Service Duration: {service.duration} mins</p>
             <button onClick={() => handleJoin(service)}>Join Queue</button>
           </div>
         ))}

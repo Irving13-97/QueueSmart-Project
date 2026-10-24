@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { getNotifications } from '../notifications';
-import { clearCurrentUser } from '../api';
+import { apiRequest, clearCurrentUser } from '../api';
 import '../App.css';
 
 export default function UserDashboard() {
@@ -24,9 +24,25 @@ export default function UserDashboard() {
     clearCurrentUser();
     navigate('/');
   };
-  const handleLeaveQueue = () => {
-    localStorage.removeItem('queuesmart_active_queue');
-    setActiveQueue(null);
+  const handleLeaveQueue = async () => {
+    if (!activeQueue) return;
+  
+    try {
+      await apiRequest(
+        `/api/queues/${activeQueue.serviceId}/leave/${activeQueue.customerId}`,
+        {
+          method: 'DELETE',
+        }
+      );
+  
+      localStorage.removeItem('queuesmart_active_queue');
+      setActiveQueue(null);
+  
+      alert('You have successfully left the queue.');
+  
+    } catch (err) {
+      alert('Error leaving queue: ' + err.message);
+    }
   };
 
   return (
