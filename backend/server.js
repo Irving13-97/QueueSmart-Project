@@ -2,6 +2,7 @@ import express from 'express';
 import { fileURLToPath } from 'url';
 import authRouter, { findUserById } from './auth.js';
 import notificationsRouter, { notifyJoined, notifyCloseToServed } from './notifications.js';
+import db from './database/db.js';
 
 const app = express();
 const PORT = 3000;
@@ -11,45 +12,66 @@ app.use('/api/auth', authRouter);
 app.use('/api/notifications', notificationsRouter);
 
 // Temporary service data stored in memory
-let services = [
-{
-    id: 1,
-    name: 'Express Oil Change',
-    description: 'A quick oil change service',
-    duration: 15,
-    priority: 'medium'
-},
-{
-    id: 2,
-    name: 'Full Synthetic Service',
-    description: 'Full synthetic oil change',
-    duration: 30,
-    priority: 'medium'
-},
-{
-    id: 3,
-    name: 'Tire Rotation & Inspection',
-    description: 'Tire rotation and vehicle inspection',
-    duration: 20,
-    priority: 'low'
-}
+// let services = [
+// {
+//     id: 1,
+//     name: 'Express Oil Change',
+//     description: 'A quick oil change service',
+//     duration: 15,
+//     priority: 'medium'
+// },
+// {
+//     id: 2,
+//     name: 'Full Synthetic Service',
+//     description: 'Full synthetic oil change',
+//     duration: 30,
+//     priority: 'medium'
+// },
+// {
+//     id: 3,
+//     name: 'Tire Rotation & Inspection',
+//     description: 'Tire rotation and vehicle inspection',
+//     duration: 20,
+//     priority: 'low'
+// }
 
-];
+// ];
 
-let queues = [
-{
-    serviceId: 1,
-    customers:[]
-},
-{
-    serviceId: 2,
-    customers:[]
-},
-{
-    serviceId: 3,
-    customers:[]
-}
-];
+
+let services = db.prepare(`
+    SELECT
+        service_id AS id,
+        service_name AS name,
+        description,
+        expected_duration AS duration,
+        priority_level AS priority
+    FROM Service
+`).all();
+
+
+
+
+// let queues = [
+// {
+//     serviceId: 1,
+//     customers:[]
+// },
+// {
+//     serviceId: 2,
+//     customers:[]
+// },
+// {
+//     serviceId: 3,
+//     customers:[]
+// }
+// ];
+
+
+let queues = services.map(service => ({
+    serviceId: service.id,
+    customers: []
+}));
+
 
 let nextCustomerId = 1;
 
@@ -62,7 +84,16 @@ app.get('/', (req, res) => {
 
 // Get all services
 app.get('/api/services', (req, res) => {
-  res.json(services);
+    const servicesFromDatabase = db.prepare(`
+        SELECT
+            service_id AS id,
+            service_name AS name,
+            description,
+            expected_duration AS duration,
+            priority_level AS priority
+        FROM Service
+    `).all();
+    return res.json(servicesFromDatabase);
 });
 
 app.post('/api/services',(req,res) => {
@@ -100,22 +131,32 @@ app.post('/api/services',(req,res) => {
         });
     }
 
-    const newService = {
-        id: services.length
-            ? Math.max(...services.map(service => service.id)) + 1
-            : 1,
+    const result = db.prepare(`
+        INSERT INTO Service
+        (service_name, description, expected_duration, priority_level)
+        VALUES (?, ?, ?, ?)
+      `).run(
+        name.trim(),
+        description.trim(),
+        serviceDuration,
+        priority
+      );
+
+      const newService = {
+        id: Number(result.lastInsertRowid),
         name: name.trim(),
         description: description.trim(),
         duration: serviceDuration,
         priority
-    };
+      };
 
-    services.push(newService);
+      services.push(newService);
 
-    queues.push({
-      serviceId: newService.id,
-      customers: []
-    });
+      queues.push({
+        serviceId: newService.id,
+        customers: []
+      });
+
 
     return res.status(201).json({
         message: 'Service created successfully',
@@ -127,7 +168,19 @@ app.post('/api/services',(req,res) => {
 app.put('/api/services/:id', (req, res) => {
     const serviceId= Number(req.params.id);
 
-    const service = services.find(item => item.id === serviceId);
+    //const service = services.find(item => item.id === serviceId);
+
+    const service = db.prepare(`
+      SELECT
+          service_id AS id,
+          service_name AS name,
+          description,
+          expected_duration AS duration,
+          priority_level AS priority
+        FROM Service
+        WHERE service_id = ?
+    `).get(serviceId);
+
 
     if(!service){
         return res.status(404).json({
@@ -169,10 +222,30 @@ app.put('/api/services/:id', (req, res) => {
         });
     }
 
+    db.prepare(`
+        UPDATE Service
+        SET service_name = ?,
+            description = ?,
+            expected_duration = ?,
+            priority_level = ?
+        WHERE service_id = ?
+    `).run(
+        name.trim(),
+        description.trim(),
+        serviceDuration,
+        priority,
+        serviceId
+    );
+
     service.name = name.trim();
     service.description = description.trim();
     service.duration = serviceDuration;
     service.priority = priority;
+
+    const memoryService = services.find(item => item.id === serviceId);
+    if (memoryService) {
+        Object.assign(memoryService, service);
+    }
 
     return res.json({
         message: 'Service updated successfully',
@@ -189,15 +262,22 @@ app.delete('/api/services/:id', (req, res) =>{
     });
   }
 
-  const serviceIndex = services.findIndex(
-    service => service.id === serviceId
-  );
+    const deletedService = db.prepare(`
+        SELECT
+            service_id AS id,
+            service_name AS name,
+            description,
+            expected_duration AS duration,
+            priority_level AS priority
+        FROM Service
+        WHERE service_id = ?
+    `).get(serviceId);
 
-  if(serviceIndex === -1){
-    return res.status(404).json({
-      error: 'Service not found'
-    });
-  }
+    if (!deletedService) {
+        return res.status(404).json({
+            error: 'Service not found'
+        });
+    }
 
   const queue = queues.find(item => item.serviceId === serviceId);
 
@@ -207,10 +287,14 @@ app.delete('/api/services/:id', (req, res) =>{
     });
   }
 
-  const deletedService = services[serviceIndex];
+    db.prepare(`
+        DELETE FROM Service
+        WHERE service_id = ?
+    `).run(serviceId);
 
-  services.splice(serviceIndex, 1);
-  queues = queues.filter(item => item.serviceId !== serviceId);
+    services = services.filter(item => item.id !== serviceId);
+    queues = queues.filter(item => item.serviceId !== serviceId);
+
 
   return res.json({
     message: 'Service deleted successfully',

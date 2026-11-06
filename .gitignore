@@ -31,3 +31,5 @@ backend/coverage/
 .env
 .env.*
 !.env.example
+
+/backend/database/*.db
