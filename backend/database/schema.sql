@@ -1,7 +1,8 @@
 -- 1. User login credentials
 CREATE TABLE IF NOT EXISTS UserCredentials (
     user_id INTEGER PRIMARY KEY AUTOINCREMENT,
-    email TEXT NOT NULL UNIQUE,
+    email TEXT NOT NULL UNIQUE
+        CHECK (length(email) <= 254),
     password_hash TEXT NOT NULL,
     role TEXT NOT NULL DEFAULT 'User'
         CHECK (role IN ('User', 'Administrator'))
@@ -11,9 +12,12 @@ CREATE TABLE IF NOT EXISTS UserCredentials (
 CREATE TABLE IF NOT EXISTS UserProfile (
     profile_id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER NOT NULL UNIQUE,
-    full_name TEXT NOT NULL,
-    contact_info TEXT,
-    preferences TEXT,
+    full_name TEXT NOT NULL
+        CHECK (length(full_name) BETWEEN 1 AND 100),
+    contact_info TEXT
+        CHECK (length(contact_info) <= 100),
+    preferences TEXT
+        CHECK (length(preferences) <= 500),
     FOREIGN KEY (user_id) REFERENCES UserCredentials(user_id)
         ON DELETE CASCADE
 );
@@ -53,15 +57,23 @@ CREATE TABLE IF NOT EXISTS QueueEntry (
     FOREIGN KEY (user_id) REFERENCES UserCredentials(user_id)
 );
 
--- 6. Notifications
+-- 6. Notifications (user_id is NULL for guests who joined without an account)
 CREATE TABLE IF NOT EXISTS Notification (
     notification_id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER NOT NULL,
-    message TEXT NOT NULL,
+    user_id INTEGER,
+    customer_id INTEGER,
+    service_id INTEGER,
+    type TEXT NOT NULL DEFAULT 'status'
+        CHECK (type IN ('joined', 'almost_ready', 'status')),
+    message TEXT NOT NULL
+        CHECK (length(message) BETWEEN 1 AND 200),
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     status TEXT NOT NULL DEFAULT 'sent'
         CHECK (status IN ('sent', 'viewed')),
     FOREIGN KEY (user_id) REFERENCES UserCredentials(user_id)
+        ON DELETE CASCADE,
+    FOREIGN KEY (service_id) REFERENCES Service(service_id)
+        ON DELETE SET NULL
 );
 
 -- 7. Queue history

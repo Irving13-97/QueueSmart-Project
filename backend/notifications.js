@@ -1,38 +1,68 @@
 import express from 'express';
+import db from './database/db.js';
 import { findUserById } from './auth.js';
 
 export const CLOSE_POSITION = 2;
 const MESSAGE_MAX = 200;
 
-let notifications = [];
-let nextNotificationId = 1;
+// Customer ids still come from the in-memory queue, so this has the same lifetime as the queue
 let notifiedCloseCustomers = new Set();
 
+const selectNotification = `
+  SELECT
+    notification_id AS id,
+    user_id AS userId,
+    customer_id AS customerId,
+    service_id AS serviceId,
+    type,
+    message,
+    status,
+    created_at AS createdAt
+  FROM Notification
+`;
+
+const insertStatement = db.prepare(`
+  INSERT INTO Notification (user_id, customer_id, service_id, type, message, created_at)
+  VALUES (?, ?, ?, ?, ?, ?)
+`);
+
+const findByIdStatement = db.prepare(`${selectNotification} WHERE notification_id = ?`);
+const allStatement = db.prepare(`${selectNotification} ORDER BY notification_id DESC`);
+const byUserStatement = db.prepare(`${selectNotification} WHERE user_id = ? ORDER BY notification_id DESC`);
+
+const markViewedStatement = db.prepare(`
+  UPDATE Notification
+  SET status = 'viewed'
+  WHERE notification_id = ?
+`);
+
 export function resetNotifications() {
-  notifications = [];
-  nextNotificationId = 1;
+  db.prepare('DELETE FROM Notification').run();
+  db.prepare(`DELETE FROM sqlite_sequence WHERE name = 'Notification'`).run();
   notifiedCloseCustomers = new Set();
 }
 
 export function createNotification({ userId = null, customerId = null, serviceId = null, type, message }) {
-  const notification = {
-    id: nextNotificationId++,
+  const result = insertStatement.run(
     userId,
     customerId,
     serviceId,
     type,
     message,
-    createdAt: new Date().toISOString()
-  };
-  notifications.push(notification);
-  return notification;
+    new Date().toISOString()
+  );
+  return findByIdStatement.get(Number(result.lastInsertRowid));
 }
 
 export function getNotifications(userId) {
-  const list = userId === undefined
-    ? notifications
-    : notifications.filter(item => item.userId === userId);
-  return [...list].reverse();
+  return userId === undefined
+    ? allStatement.all()
+    : byUserStatement.all(userId);
+}
+
+export function markNotificationViewed(id) {
+  markViewedStatement.run(id);
+  return findByIdStatement.get(id);
 }
 
 export function notifyJoined(customer, service) {
@@ -70,7 +100,7 @@ export function notifyCloseToServed(queue, service) {
   return created;
 }
 
-function parseUserId(value) {
+function parseId(value) {
   const id = Number(value);
   return Number.isInteger(id) && id > 0 ? id : null;
 }
@@ -82,7 +112,7 @@ router.get('/', (req, res) => {
     return res.json(getNotifications());
   }
 
-  const userId = parseUserId(req.query.userId);
+  const userId = parseId(req.query.userId);
 
   if (userId === null) {
     return res.status(400).json({ error: 'User ID must be a positive whole number' });
@@ -105,7 +135,7 @@ router.post('/', (req, res) => {
   let id = null;
 
   if (userId !== undefined && userId !== null) {
-    id = parseUserId(userId);
+    id = parseId(userId);
 
     if (id === null) {
       return res.status(400).json({ error: 'User ID must be a positive whole number' });
@@ -125,6 +155,23 @@ router.post('/', (req, res) => {
   return res.status(201).json({
     message: 'Notification created',
     notification
+  });
+});
+
+router.patch('/:id/viewed', (req, res) => {
+  const id = parseId(req.params.id);
+
+  if (id === null) {
+    return res.status(400).json({ error: 'Notification ID must be a positive whole number' });
+  }
+
+  if (!findByIdStatement.get(id)) {
+    return res.status(404).json({ error: 'Notification not found' });
+  }
+
+  return res.json({
+    message: 'Notification marked as viewed',
+    notification: markNotificationViewed(id)
   });
 });
 

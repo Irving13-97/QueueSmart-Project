@@ -1,16 +1,19 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import request from 'supertest';
 import app from '../server.js';
+import db from '../database/db.js';
 import { resetUsers } from '../auth.js';
 import {
   resetNotifications,
   createNotification,
   getNotifications,
+  markNotificationViewed,
   notifyJoined,
   notifyCloseToServed
 } from '../notifications.js';
 
-const service = { id: 99, name: 'Test Service' };
+const ADMIN_ID = 1;
+const service = { id: 1, name: 'Test Service' };
 
 async function createService() {
   const res = await request(app).post('/api/services').send({
@@ -37,28 +40,31 @@ beforeEach(() => {
 });
 
 describe('notification logic', () => {
-  it('creates notifications with an id and timestamp', () => {
-    const note = createNotification({ userId: 1, type: 'status', message: 'Hello' });
+  it('creates notifications with an id, timestamp, and sent status', () => {
+    const note = createNotification({ userId: ADMIN_ID, type: 'status', message: 'Hello' });
 
     expect(note.id).toBe(1);
     expect(note.createdAt).toBeTypeOf('string');
     expect(note.customerId).toBeNull();
+    expect(note.status).toBe('sent');
   });
 
-  it('returns newest notifications first and filters by user', () => {
-    createNotification({ userId: 1, type: 'status', message: 'first' });
-    createNotification({ userId: 2, type: 'status', message: 'other user' });
-    createNotification({ userId: 1, type: 'status', message: 'second' });
+  it('returns newest notifications first and filters by user', async () => {
+    const other = await registerUser('other@example.com');
+    createNotification({ userId: ADMIN_ID, type: 'status', message: 'first' });
+    createNotification({ userId: other.id, type: 'status', message: 'other user' });
+    createNotification({ userId: ADMIN_ID, type: 'status', message: 'second' });
 
-    expect(getNotifications(1).map(note => note.message)).toEqual(['second', 'first']);
+    expect(getNotifications(ADMIN_ID).map(note => note.message)).toEqual(['second', 'first']);
     expect(getNotifications()).toHaveLength(3);
   });
 
-  it('builds a joined message with the position', () => {
-    const note = notifyJoined({ id: 5, userId: 3, position: 4 }, service);
+  it('builds a joined message with the position', async () => {
+    const user = await registerUser('joined@example.com');
+    const note = notifyJoined({ id: 5, userId: user.id, position: 4 }, service);
 
     expect(note.type).toBe('joined');
-    expect(note.userId).toBe(3);
+    expect(note.userId).toBe(user.id);
     expect(note.message).toContain('Test Service');
     expect(note.message).toContain('#4');
   });
@@ -88,6 +94,46 @@ describe('notification logic', () => {
     const second = notifyCloseToServed(queue, service);
 
     expect(second).toHaveLength(0);
+  });
+
+  it('marks a notification as viewed', () => {
+    const note = createNotification({ userId: ADMIN_ID, type: 'status', message: 'Read me' });
+
+    expect(markNotificationViewed(note.id).status).toBe('viewed');
+  });
+});
+
+describe('notification persistence', () => {
+  it('stores notifications in the Notification table', () => {
+    const note = createNotification({ userId: ADMIN_ID, serviceId: 1, type: 'status', message: 'Saved' });
+
+    const row = db.prepare('SELECT * FROM Notification WHERE notification_id = ?').get(note.id);
+
+    expect(row).toMatchObject({
+      user_id: ADMIN_ID,
+      service_id: 1,
+      type: 'status',
+      message: 'Saved',
+      status: 'sent'
+    });
+  });
+
+  it('rejects a notification for a user that does not exist', () => {
+    expect(() => createNotification({ userId: 999, type: 'status', message: 'Hi' })).toThrow(/FOREIGN KEY/);
+  });
+
+  it('rejects an unknown notification type', () => {
+    expect(() => createNotification({ type: 'spam', message: 'Hi' })).toThrow(/CHECK/);
+  });
+
+  it('keeps notifications but clears the service when the service is deleted', async () => {
+    const newService = await createService();
+    const note = createNotification({ serviceId: newService.id, type: 'status', message: 'Service note' });
+
+    await request(app).delete(`/api/services/${newService.id}`);
+
+    const row = db.prepare('SELECT service_id FROM Notification WHERE notification_id = ?').get(note.id);
+    expect(row.service_id).toBeNull();
   });
 });
 
@@ -162,7 +208,7 @@ describe('queue triggers', () => {
 
 describe('GET /api/notifications', () => {
   it('returns all notifications', async () => {
-    createNotification({ userId: 1, type: 'status', message: 'one' });
+    createNotification({ userId: ADMIN_ID, type: 'status', message: 'one' });
 
     const res = await request(app).get('/api/notifications');
 
@@ -171,10 +217,11 @@ describe('GET /api/notifications', () => {
   });
 
   it('returns notifications for one user', async () => {
-    createNotification({ userId: 1, type: 'status', message: 'mine' });
-    createNotification({ userId: 2, type: 'status', message: 'not mine' });
+    const other = await registerUser('other@example.com');
+    createNotification({ userId: ADMIN_ID, type: 'status', message: 'mine' });
+    createNotification({ userId: other.id, type: 'status', message: 'not mine' });
 
-    const res = await request(app).get('/api/notifications?userId=1');
+    const res = await request(app).get(`/api/notifications?userId=${ADMIN_ID}`);
 
     expect(res.body.map(note => note.message)).toEqual(['mine']);
   });
@@ -237,6 +284,30 @@ describe('POST /api/notifications', () => {
     const res = await request(app)
       .post('/api/notifications')
       .send({ userId: 999, message: 'Hi' });
+
+    expect(res.status).toBe(404);
+  });
+});
+
+describe('PATCH /api/notifications/:id/viewed', () => {
+  it('marks the notification as viewed', async () => {
+    const note = createNotification({ userId: ADMIN_ID, type: 'status', message: 'Unread' });
+
+    const res = await request(app).patch(`/api/notifications/${note.id}/viewed`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.notification.status).toBe('viewed');
+    expect(getNotifications(ADMIN_ID)[0].status).toBe('viewed');
+  });
+
+  it('returns 400 for an invalid id', async () => {
+    const res = await request(app).patch('/api/notifications/abc/viewed');
+
+    expect(res.status).toBe(400);
+  });
+
+  it('returns 404 for an unknown notification', async () => {
+    const res = await request(app).patch('/api/notifications/999/viewed');
 
     expect(res.status).toBe(404);
   });
