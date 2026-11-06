@@ -165,5 +165,51 @@ describe('Root & Service Management Endpoints', () => {
       expect(res.status).toBe(409);
       expect(res.body.error).toBe('Cannot delete a service while customers are waiting');
     });
+
+
+    it('returns 409 when deleting a service with completed history', async () => {
+      const created = await request(app).post('/api/services').send({
+        name: 'History Test Service',
+        description: 'Service with completed customer history',
+        duration: 15,
+        priority: 'medium'
+      });
+
+      expect(created.status).toBe(201);
+      const serviceId = created.body.service.id;
+
+      const joined = await request(app)
+        .post(`/api/queues/${serviceId}/join`)
+        .send({ customerName: 'History Test Customer' });
+
+      expect(joined.status).toBe(201);
+
+      const served = await request(app)
+        .post(`/api/queues/${serviceId}/serve-next`);
+
+      expect(served.status).toBe(200);
+
+      const deleted = await request(app)
+        .delete(`/api/services/${serviceId}`);
+
+      expect(deleted.status).toBe(409);
+      expect(deleted.body.error).toBe(
+        'Cannot delete a service that has completed history records'
+      );
+
+      const services = await request(app).get('/api/services');
+      expect(services.body.some(service => service.id === serviceId)).toBe(true);
+
+      const history = await request(app).get(`/api/history/${serviceId}`);
+      expect(history.status).toBe(200);
+      expect(history.body).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            customerName: 'History Test Customer',
+            status: 'served'
+          })
+        ])
+      );
+    });
   });
 });

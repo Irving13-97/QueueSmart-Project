@@ -93,6 +93,10 @@ function ensureAdmin() {
 ensureAdmin();
 
 export const resetUsers = db.transaction(() => {
+  if (process.env.NODE_ENV === 'test') {
+    db.prepare('DELETE FROM QueueEntry').run();
+  }
+
   db.prepare('DELETE FROM UserCredentials').run();
   db.prepare(`
     DELETE FROM sqlite_sequence

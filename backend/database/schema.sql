@@ -79,11 +79,12 @@ CREATE TABLE IF NOT EXISTS Notification (
 -- 7. Queue history
 CREATE TABLE IF NOT EXISTS QueueHistory (
     history_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    customer_id INTEGER,
     user_id INTEGER,
     service_id INTEGER NOT NULL,
     customer_name TEXT NOT NULL,
     status TEXT NOT NULL
-        CHECK (status IN ('served', 'canceled')),
+        CHECK (status IN ('served', 'left', 'canceled')),
     completed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES UserCredentials(user_id),
     FOREIGN KEY (service_id) REFERENCES Service(service_id)

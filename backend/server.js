@@ -1,4 +1,4 @@
-import express from 'express';
+﻿import express from 'express';
 import { fileURLToPath } from 'url';
 import authRouter, { findUserById } from './auth.js';
 import notificationsRouter, { notifyJoined, notifyCloseToServed } from './notifications.js';
@@ -11,33 +11,6 @@ app.use(express.json());
 app.use('/api/auth', authRouter);
 app.use('/api/notifications', notificationsRouter);
 
-// Temporary service data stored in memory
-// let services = [
-// {
-//     id: 1,
-//     name: 'Express Oil Change',
-//     description: 'A quick oil change service',
-//     duration: 15,
-//     priority: 'medium'
-// },
-// {
-//     id: 2,
-//     name: 'Full Synthetic Service',
-//     description: 'Full synthetic oil change',
-//     duration: 30,
-//     priority: 'medium'
-// },
-// {
-//     id: 3,
-//     name: 'Tire Rotation & Inspection',
-//     description: 'Tire rotation and vehicle inspection',
-//     duration: 20,
-//     priority: 'low'
-// }
-
-// ];
-
-
 let services = db.prepare(`
     SELECT
         service_id AS id,
@@ -48,29 +21,53 @@ let services = db.prepare(`
     FROM Service
 `).all();
 
+db.prepare(`
+    INSERT INTO Queue (service_id, status)
+    SELECT s.service_id, 'open'
+    FROM Service s
+    WHERE NOT EXISTS (
+        SELECT 1
+        FROM Queue q
+        WHERE q.service_id = s.service_id
+    )
+`).run();
 
 
 
-// let queues = [
-// {
-//     serviceId: 1,
-//     customers:[]
-// },
-// {
-//     serviceId: 2,
-//     customers:[]
-// },
-// {
-//     serviceId: 3,
-//     customers:[]
-// }
-// ];
+let queues = services.map(service => {
+  const customers = db.prepare(`
+    SELECT
+      qe.entry_id AS id,
+      qe.customer_name AS customerName,
+      q.service_id AS serviceId,
+      qe.position,
+      qe.user_id AS userId
+    FROM QueueEntry qe
+    JOIN Queue q ON qe.queue_id = q.queue_id
+    WHERE q.service_id = ?
+      AND qe.status = 'waiting'
+    ORDER BY qe.position, qe.entry_id
+  `).all(service.id).map((customer, index) => {
+    const result = {
+      id: customer.id,
+      customerName: customer.customerName,
+      serviceId: customer.serviceId,
+      position: index + 1
+    };
 
+    if (customer.userId !== null) {
+      result.userId = customer.userId;
+    }
 
-let queues = services.map(service => ({
+    return result;
+  });
+
+  return {
     serviceId: service.id,
-    customers: []
-}));
+    customers
+  };
+});
+
 
 
 let nextCustomerId = 1;
@@ -152,11 +149,16 @@ app.post('/api/services',(req,res) => {
 
       services.push(newService);
 
-      queues.push({
-        serviceId: newService.id,
-        customers: []
-      });
+      db.prepare(`
+      INSERT INTO Queue (service_id, status)
+      VALUES (?, 'open')
+      `).run(newService.id);
 
+
+      queues.push({
+          serviceId: newService.id,
+          customers: []
+      });
 
     return res.status(201).json({
         message: 'Service created successfully',
@@ -287,10 +289,46 @@ app.delete('/api/services/:id', (req, res) =>{
     });
   }
 
+    const existingHistory = db.prepare(`
+    SELECT COUNT(*) AS total
+    FROM QueueHistory
+    WHERE service_id = ?
+  `).get(serviceId);
+
+  if (existingHistory.total > 0) {
+    return res.status(409).json({
+      error: 'Cannot delete a service that has completed history records'
+    });
+  }
+      const deleteServiceTransaction = db.transaction(() => {
     db.prepare(`
-        DELETE FROM Service
-        WHERE service_id = ?
+      UPDATE Notification
+      SET service_id = NULL
+      WHERE service_id = ?
     `).run(serviceId);
+
+    db.prepare(`
+      DELETE FROM QueueEntry
+      WHERE queue_id IN (
+        SELECT queue_id
+        FROM Queue
+        WHERE service_id = ?
+      )
+    `).run(serviceId);
+
+    db.prepare(`
+      DELETE FROM Queue
+      WHERE service_id = ?
+    `).run(serviceId);
+
+    db.prepare(`
+      DELETE FROM Service
+      WHERE service_id = ?
+    `).run(serviceId);
+  });
+
+deleteServiceTransaction();
+
 
     services = services.filter(item => item.id !== serviceId);
     queues = queues.filter(item => item.serviceId !== serviceId);
@@ -328,33 +366,132 @@ app.post("/api/queues/:serviceId/serve-next", (req, res) =>{
     });
   }
 
-  if(queue.customers.length === 0){
+  if (!db.prepare(`
+    SELECT 1
+    FROM QueueEntry qe
+    JOIN Queue q ON qe.queue_id = q.queue_id
+    WHERE q.service_id = ?
+      AND qe.status = 'waiting'
+    LIMIT 1
+  `).get(serviceId)) {
+
     return res.status(400).json({
-      error: "No customers are waiting in this queue",
+      error: "No customers are waiting in this queue"
     });
   }
 
-  const servedCustomer = queue.customers.shift();
+  const serveNextTransaction = db.transaction(() => {
+    const nextCustomer = db.prepare(`
+     SELECT
+        qe.entry_id AS id,
+        qe.customer_name AS customerName,
+        qe.user_id AS userId,
+        q.queue_id AS queueId
+      FROM QueueEntry qe
+      JOIN Queue q ON qe.queue_id = q.queue_id
+      WHERE q.service_id = ?
+        AND qe.status = 'waiting'
+      ORDER BY qe.position, qe.entry_id
+      LIMIT 1
+    `).get(serviceId);
+
+    if (!nextCustomer) {
+      return null;
+    }
+
+    const completedAt = new Date().toISOString();
+
+    db.prepare(`
+      UPDATE QueueEntry
+      SET status = 'served'
+      WHERE entry_id = ?
+    `).run(nextCustomer.id);
+
+    db.prepare(`
+      INSERT INTO QueueHistory (
+        customer_id,
+        user_id,
+        service_id,
+        customer_name,
+        status,
+        completed_at
+      )
+      VALUES (?, ?, ?, ?, 'served', ?)
+    `).run(
+      nextCustomer.id,
+      nextCustomer.userId,
+      serviceId,
+      nextCustomer.customerName,
+      completedAt
+    );
+
+    const remaining = db.prepare(`
+      SELECT qe.entry_id AS id
+      FROM QueueEntry qe
+      JOIN Queue q ON qe.queue_id = q.queue_id
+      WHERE q.service_id = ?
+        AND qe.status = 'waiting'
+      ORDER BY qe.position, qe.entry_id
+    `).all(serviceId);
+
+    const updatePosition = db.prepare(`
+      UPDATE QueueEntry
+      SET position = ?
+      WHERE entry_id = ?
+    `);
+
+    remaining.forEach((customer, index) => {
+      updatePosition.run(index + 1, customer.id);
+    });
+
+    return {
+      servedCustomer: {
+        id: nextCustomer.id,
+        customerName: nextCustomer.customerName,
+        serviceId,
+        position: 1,
+        ...(nextCustomer.userId !== null
+          ? { userId: nextCustomer.userId }
+          : {})
+      },
+      remainingCustomers: remaining.length
+    };
+  });
+
+  const result = serveNextTransaction();
+
+  if (!result) {
+    return res.status(400).json({
+      error: 'No customers are waiting in this queue'
+    });
+  }
+
+  const servedCustomer = result.servedCustomer;
+
+  queue.customers = queue.customers.filter(
+    customer => customer.id !== servedCustomer.id
+  );
+
+  queue.customers.forEach((customer, index) => {
+    customer.position = index + 1;
+  });
 
   queueHistory.push({
     customerId: servedCustomer.id,
     customerName: servedCustomer.customerName,
-    serviceId: serviceId,
+    serviceId,
     serviceName: service.name,
     status: 'served',
     completedAt: new Date().toISOString()
   });
 
-  queue.customers.forEach((customer, index) =>{
-    customer.position = index + 1;
-  });
 
   notifyCloseToServed(queue, service);
 
   return res.status(200).json({
     message: `${servedCustomer.customerName} has been served`,
     servedCustomer,
-    remainingCustomers: queue.customers.length,
+    remainingCustomers: result.remainingCustomers,
   });
 });
 
@@ -394,11 +531,49 @@ app.post('/api/queues/:serviceId/join', (req, res) => {
     });
   }
 
+  const sqliteQueue = db.prepare(`
+  SELECT queue_id
+  FROM Queue
+  WHERE service_id = ?
+`).get(serviceId);
+
+if (!sqliteQueue) {
+  return res.status(404).json({
+    error: 'Queue not found in database.'
+  });
+}
+
+const position = queue.customers.length + 1;
+
+  const databaseUser = userId === undefined
+    ? undefined
+    : db.prepare(`
+        SELECT user_id
+        FROM UserCredentials
+        WHERE user_id = ?
+      `).get(userId);
+
+  const result = db.prepare(`
+    INSERT INTO QueueEntry (
+      queue_id,
+      user_id,
+      customer_name,
+      position,
+      status
+    )
+    VALUES (?, ?, ?, ?, 'waiting')
+  `).run(
+    sqliteQueue.queue_id,
+    databaseUser ? userId : null,
+    customerName.trim(),
+    position
+  );
+
   const customer = {
-    id: nextCustomerId++,
+    id: Number(result.lastInsertRowid),
     customerName: customerName.trim(),
     serviceId,
-    position: queue.customers.length + 1
+    position
   };
 
   if (userId !== undefined) {
@@ -416,7 +591,6 @@ app.post('/api/queues/:serviceId/join', (req, res) => {
   });
 });
 
-
 app.get('/api/queues/:serviceId', (req, res) => {
   const serviceId = Number(req.params.serviceId);
 
@@ -429,20 +603,41 @@ app.get('/api/queues/:serviceId', (req, res) => {
     });
   }
 
-  const customers = queue.customers.map((customer, index) => ({
-    ...customer,
-    position: index + 1,
-    estimatedWait: (index + 1) * service.duration
-  }));
+  const customers = db.prepare(`
+    SELECT
+      qe.entry_id AS id,
+      qe.customer_name AS customerName,
+      q.service_id AS serviceId,
+      qe.position,
+      qe.user_id AS userId
+    FROM QueueEntry qe
+    JOIN Queue q ON qe.queue_id = q.queue_id
+    WHERE q.service_id = ?
+      AND qe.status = 'waiting'
+    ORDER BY qe.position, qe.entry_id
+  `).all(serviceId).map((customer, index) => {
+    const result = {
+      id: customer.id,
+      customerName: customer.customerName,
+      serviceId: customer.serviceId,
+      position: index + 1,
+      estimatedWait: (index + 1) * service.duration
+    };
+
+    if (customer.userId !== null) {
+      result.userId = customer.userId;
+    }
+
+    return result;
+  });
+
 
   return res.json({
     serviceName: service.name,
     customers
   });
-});
-
-
-app.delete('/api/queues/:serviceId/leave/:customerId', (req, res) => {
+  });
+  app.delete('/api/queues/:serviceId/leave/:customerId', (req, res) => {
   const serviceId = Number(req.params.serviceId);
   const customerId = Number(req.params.customerId);
 
@@ -454,41 +649,129 @@ app.delete('/api/queues/:serviceId/leave/:customerId', (req, res) => {
     });
   }
 
-  const customerIndex = queue.customers.findIndex(
-    customer => customer.id === customerId
-  );
+  const leaveTransaction = db.transaction(() => {
+    const customer = db.prepare(`
+      SELECT
+        qe.entry_id AS id,
+        qe.customer_name AS customerName,
+        qe.user_id AS userId
+      FROM QueueEntry qe
+      JOIN Queue q ON qe.queue_id = q.queue_id
+      WHERE q.service_id = ?
+        AND qe.entry_id = ?
+        AND qe.status = 'waiting'
+    `).get(serviceId, customerId);
 
-  if (customerIndex === -1) {
+    if (!customer) {
+      return null;
+    }
+
+    const completedAt = new Date().toISOString();
+
+    db.prepare(`
+      UPDATE QueueEntry
+      SET status = 'canceled'
+      WHERE entry_id = ?
+    `).run(customer.id);
+
+    db.prepare(`
+      INSERT INTO QueueHistory (
+        customer_id,
+        user_id,
+        service_id,
+        customer_name,
+        status,
+        completed_at
+      )
+      VALUES (?, ?, ?, ?, 'left', ?)
+    `).run(
+      customer.id,
+      customer.userId,
+      serviceId,
+      customer.customerName,
+      completedAt
+    );
+
+    const remaining = db.prepare(`
+      SELECT qe.entry_id AS id
+      FROM QueueEntry qe
+      JOIN Queue q ON qe.queue_id = q.queue_id
+      WHERE q.service_id = ?
+        AND qe.status = 'waiting'
+      ORDER BY qe.position, qe.entry_id
+    `).all(serviceId);
+
+    const updatePosition = db.prepare(`
+      UPDATE QueueEntry
+      SET position = ?
+      WHERE entry_id = ?
+    `);
+
+    remaining.forEach((entry, index) => {
+      updatePosition.run(index + 1, entry.id);
+    });
+
+    return {
+      customer,
+      remainingCustomers: remaining.length,
+      completedAt
+    };
+  });
+
+  const result = leaveTransaction();
+
+  if (!result) {
     return res.status(404).json({
       error: 'Customer not found in this queue.'
     });
   }
 
-  const removedCustomer = queue.customers.splice(customerIndex, 1)[0];
+  queue.customers = queue.customers.filter(
+    customer => customer.id !== customerId
+  );
+
+  queue.customers.forEach((customer, index) => {
+    customer.position = index + 1;
+  });
+
+  const service = services.find(item => item.id === serviceId);
 
   queueHistory.push({
-    customerId: removedCustomer.id,
-    customerName: removedCustomer.customerName,
-    serviceId: serviceId,
-    serviceName: services.find(service => service.id === serviceId).name,
+    customerId: result.customer.id,
+    customerName: result.customer.customerName,
+    serviceId,
+    serviceName: service.name,
     status: 'left',
-    completedAt: new Date().toISOString()
+    completedAt: result.completedAt
   });
 
-  notifyCloseToServed(queue, services.find(service => service.id === serviceId));
+  notifyCloseToServed(queue, service);
 
   return res.json({
-    message: `${removedCustomer.customerName} has left the queue.`,
-    customerId: removedCustomer.id,
-    remainingCustomers: queue.customers.length
+    message: `${result.customer.customerName} has left the queue.`,
+    customerId: result.customer.id,
+    remainingCustomers: result.remainingCustomers
   });
 });
-
 
 
 app.get('/api/history', (req, res) => {
-  return res.json(queueHistory);
+  const history = db.prepare(`
+    SELECT
+      h.customer_id AS customerId,
+      h.customer_name AS customerName,
+      h.service_id AS serviceId,
+      s.service_name AS serviceName,
+      h.status,
+      h.completed_at AS completedAt
+    FROM QueueHistory h
+    LEFT JOIN Service s ON h.service_id = s.service_id
+    ORDER BY h.history_id
+  `).all();
+
+  return res.json(history);
 });
+
 
 app.get('/api/history/:serviceId', (req, res) => {
   const serviceId = Number(req.params.serviceId);
@@ -507,12 +790,23 @@ app.get('/api/history/:serviceId', (req, res) => {
     });
   }
 
-  const serviceHistory = queueHistory.filter(
-    record => record.serviceId === serviceId
-  );
+  const history = db.prepare(`
+    SELECT
+      h.customer_id AS customerId,
+      h.customer_name AS customerName,
+      h.service_id AS serviceId,
+      s.service_name AS serviceName,
+      h.status,
+      h.completed_at AS completedAt
+    FROM QueueHistory h
+    LEFT JOIN Service s ON h.service_id = s.service_id
+    WHERE h.service_id = ?
+    ORDER BY h.history_id
+  `).all(serviceId);
 
-  return res.json(serviceHistory);
+  return res.json(history);
 });
+
 
 
 
