@@ -29,18 +29,24 @@ useEffect(() => {
     }
   }
 
-  loadHistory();
 
-  return () => {
-    active = false;
-  };
+loadHistory();
+
+// Refresh queue history every 10 seconds
+const intervalId = setInterval(loadHistory, 10000);
+
+return () => {
+  active = false;
+  clearInterval(intervalId);
+};
+
 }, []);
   return (
     <div>
       <h1>Queue History</h1>
       <Link to="/user-dashboard">Back to Dashboard</Link>
 
-      
+
 {loading ? (
   <p>Loading history...</p>
 ) : error ? (

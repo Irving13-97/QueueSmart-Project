@@ -61,20 +61,26 @@ useEffect(() => {
     }
   }
 
-  loadQueueStatus();
 
-  return () => {
-    active = false;
-  };
+loadQueueStatus();
+
+// Automatically refresh queue status every 10 seconds
+const intervalId = setInterval(loadQueueStatus, 10000);
+
+return () => {
+  active = false;
+  clearInterval(intervalId);
+};
+
 }, [queue?.serviceId, queue?.customerId]);
 
   // Demo only: moves the user one place forward so each status can be seen
   const handleLeave = async () => {
     if (!queue) return;
-  
+
     setError('');
     setNotice('');
-  
+
     try {
       const result = await apiRequest(
         `/api/queues/${queue.serviceId}/leave/${queue.customerId}`,
@@ -82,12 +88,12 @@ useEffect(() => {
           method: 'DELETE',
         }
       );
-  
+
       localStorage.removeItem('queuesmart_active_queue');
-  
+
       setQueue(null);
       setNotice(result.message);
-  
+
     } catch (err) {
       setError(err.message);
     }

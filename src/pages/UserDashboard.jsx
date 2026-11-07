@@ -20,6 +20,58 @@ export default function UserDashboard() {
       .catch((err) => setNotificationError(err.message));
   }, []);
 
+
+useEffect(() => {
+  if (!activeQueue?.serviceId || !activeQueue?.customerId) return;
+
+  let active = true;
+
+  async function refreshActiveQueue() {
+    try {
+      const data = await apiRequest(
+        `/api/queues/${activeQueue.serviceId}`
+      );
+
+      if (!active) return;
+
+      const customer = data.customers.find(
+        (person) => person.id === activeQueue.customerId
+      );
+
+      if (customer) {
+        const updatedQueue = {
+          ...activeQueue,
+          serviceName: data.serviceName,
+          position: customer.position,
+          waitTime: `${customer.estimatedWait} mins`,
+        };
+
+        setActiveQueue(updatedQueue);
+
+        localStorage.setItem(
+          'queuesmart_active_queue',
+          JSON.stringify(updatedQueue)
+        );
+      } else {
+        localStorage.removeItem('queuesmart_active_queue');
+        setActiveQueue(null);
+      }
+    } catch (err) {
+      if (active) console.error('Queue refresh failed:', err);
+    }
+  }
+
+  refreshActiveQueue();
+
+  const intervalId = setInterval(refreshActiveQueue, 10000);
+
+  return () => {
+    active = false;
+    clearInterval(intervalId);
+  };
+}, [activeQueue?.serviceId, activeQueue?.customerId]);
+
+
   const handleLogout = () => {
     clearCurrentUser();
     navigate('/');
