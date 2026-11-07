@@ -72,6 +72,8 @@ CREATE TABLE IF NOT EXISTS Notification (
         CHECK (status IN ('sent', 'viewed')),
     FOREIGN KEY (user_id) REFERENCES UserCredentials(user_id)
         ON DELETE CASCADE,
+    FOREIGN KEY (customer_id) REFERENCES QueueEntry(entry_id)
+        ON DELETE CASCADE,
     FOREIGN KEY (service_id) REFERENCES Service(service_id)
         ON DELETE SET NULL
 );
@@ -86,6 +88,10 @@ CREATE TABLE IF NOT EXISTS QueueHistory (
     status TEXT NOT NULL
         CHECK (status IN ('served', 'left', 'canceled')),
     completed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (user_id) REFERENCES UserCredentials(user_id),
+    FOREIGN KEY (customer_id) REFERENCES QueueEntry(entry_id)
+        ON DELETE SET NULL,
+    FOREIGN KEY (user_id) REFERENCES UserCredentials(user_id)
+        ON DELETE SET NULL,
     FOREIGN KEY (service_id) REFERENCES Service(service_id)
+        ON DELETE SET NULL
 );
